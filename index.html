@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Hellboard - Endless 3D Snowboard Runner</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030712;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Glassmorphism Styling */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .logo-gradient {
+            background: linear-gradient(135deg, #38bdf8 0%, #ffffff 40%, #ef4444 80%, #f97316 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .text-shadow-fire {
+            text-shadow: 0 0 15px rgba(239, 68, 68, 0.9), 0 0 30px rgba(249, 115, 22, 0.7);
+        }
+
+        /* Damage Flash Overlay */
+        #damage-flash {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, transparent 40%, rgba(239, 68, 68, 0.6) 100%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease-out;
+        }
+
+        /* Speed Boost Flash Overlay */
+        #boost-flash {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, transparent 40%, rgba(56, 189, 248, 0.45) 100%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-black text-white select-none overflow-hidden">
+
+    <div id="game-container">
+        <!-- Three.js Canvas Container -->
+        <div id="canvas-container" class="w-full h-full"></div>
+
+        <!-- Visual Overlays -->
+        <div id="damage-flash"></div>
+        <div id="boost-flash"></div>
+
+        <!-- Dynamic Game HUD -->
+        <div id="hud" class="absolute inset-0 pointer-events-none p-4 md:p-6 flex flex-col justify-between z-20 hidden">
+            <!-- Top Header Bar: Clean Top-Center & Top-Edge Placement -->
+            <div class="flex flex-col md:flex-row justify-between items-center w-full max-w-6xl mx-auto gap-3">
+                <!-- Branding & Health Bar -->
+                <div class="flex items-center space-x-3 w-full md:w-auto justify-between md:justify-start">
+                    <div class="text-xl md:text-2xl font-black tracking-widest logo-gradient drop-shadow-md">
+                        HELLBOARD
+                    </div>
+                    <!-- Health Bar -->
+                    <div class="flex items-center space-x-2 glass-panel px-3.5 py-1.5 rounded-xl border border-white/20">
+                        <i class="fa-solid fa-heart text-red-500 animate-pulse text-xs"></i>
+                        <div class="w-28 md:w-36 h-2.5 bg-slate-900/90 rounded-full overflow-hidden border border-white/20">
+                            <div id="health-bar" class="h-full bg-gradient-to-r from-red-600 to-emerald-400 transition-all duration-300" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOP-CENTER Realm Status Badge (Non-Intrusive, Fully Visible) -->
+                <div id="phase-badge" class="glass-panel px-5 py-1.5 rounded-full border border-cyan-400/40 flex items-center space-x-2 transition-all duration-700 shadow-lg">
+                    <span id="phase-icon" class="text-cyan-400 text-xs"><i class="fa-solid fa-snowflake animate-spin"></i></span>
+                    <span id="phase-text" class="text-xs font-black tracking-widest uppercase text-cyan-200">SNOW PEAK</span>
+                </div>
+
+                <!-- Score, Distance & Audio Controls -->
+                <div class="flex items-center space-x-2.5 w-full md:w-auto justify-end">
+                    <div class="flex flex-col items-end glass-panel px-3 py-1.5 rounded-2xl border border-white/20">
+                        <span class="text-[9px] font-bold text-gray-300 uppercase tracking-widest">Score</span>
+                        <div class="flex items-center space-x-1.5">
+                            <span id="hud-score" class="text-lg md:text-xl font-black text-amber-400 font-mono">0</span>
+                            <span class="text-[10px] text-gray-400">pts</span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-end glass-panel px-3 py-1.5 rounded-2xl border border-white/20 hidden sm:flex">
+                        <span class="text-[9px] font-bold text-gray-300 uppercase tracking-widest">Distance</span>
+                        <span id="hud-distance" class="text-lg font-black text-cyan-400 font-mono">0 m</span>
+                    </div>
+
+                    <!-- Mute Toggle -->
+                    <button id="audio-toggle-btn" class="pointer-events-auto glass-panel p-3 rounded-2xl border border-white/20 text-white hover:bg-white/20 active:scale-95 transition">
+                        <i id="audio-icon" class="fa-solid fa-volume-high text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Bottom HUD Bar: Speed & Controls Guide -->
+            <div class="flex justify-between items-end w-full max-w-6xl mx-auto">
+                <!-- Speedometer -->
+                <div class="glass-panel px-4 py-2 rounded-2xl border border-white/20 flex flex-col space-y-1">
+                    <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest space-x-4">
+                        <span class="text-cyan-400">SPEED</span>
+                        <span id="hud-speed" class="text-emerald-400 font-mono text-[10px]">40 km/h</span>
+                    </div>
+                    <div class="w-32 md:w-44 h-2 bg-slate-900/90 rounded-full overflow-hidden border border-white/20">
+                        <div id="speed-bar" class="h-full bg-gradient-to-r from-cyan-400 to-amber-500 transition-all duration-100" style="width: 35%;"></div>
+                    </div>
+                </div>
+
+                <!-- On-Screen Action Buttons (Jump & Brake) -->
+                <div class="flex items-center space-x-3 pointer-events-auto">
+                    <button id="brake-btn" class="bg-slate-800/90 hover:bg-slate-700 active:scale-95 transition text-cyan-300 font-black px-5 py-3.5 rounded-2xl shadow-xl border border-cyan-500/30 flex items-center space-x-2 touch-manipulation">
+                        <i class="fa-solid fa-angles-down text-base"></i>
+                        <span class="tracking-wider text-xs md:text-sm">BRAKE</span>
+                    </button>
+                    <button id="jump-btn" class="bg-gradient-to-r from-cyan-600 via-blue-600 to-red-600 hover:brightness-110 active:scale-95 transition text-white font-black px-6 py-3.5 rounded-2xl shadow-2xl border border-white/30 flex items-center space-x-2 touch-manipulation">
+                        <i class="fa-solid fa-angles-up text-base"></i>
+                        <span class="tracking-wider text-xs md:text-sm">JUMP</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 z-40 text-center">
+            <div class="max-w-md w-full glass-panel p-8 rounded-3xl border border-white/20 shadow-2xl space-y-6">
+                <div class="space-y-2">
+                    <div class="inline-block px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                        Endless 3D Snowboarding Runner
+                    </div>
+                    <h1 class="text-5xl md:text-6xl font-black tracking-tight logo-gradient drop-shadow-lg">
+                        HELLBOARD
+                    </h1>
+                    <p class="text-gray-300 text-xs font-medium">Carve the infinite snowy peaks straight into the blazing depths of Hell!</p>
+                </div>
+
+                <!-- Control Instructions -->
+                <div class="bg-slate-900/80 p-4 rounded-2xl text-left border border-white/10 space-y-2.5 text-xs text-gray-300">
+                    <div class="flex items-center space-x-3">
+                        <i class="fa-solid fa-arrows-left-right text-cyan-400 text-base w-5 text-center"></i>
+                        <span><strong>Steer:</strong> Drag Left/Right or A/D / Arrow Keys</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <i class="fa-solid fa-angles-up text-emerald-400 text-base w-5 text-center"></i>
+                        <span><strong>Jump:</strong> Swipe UP, press W / Up Arrow, or Jump Button</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <i class="fa-solid fa-angles-down text-amber-400 text-base w-5 text-center"></i>
+                        <span><strong>Brake:</strong> Swipe DOWN, press S / Down Arrow, or Brake Button</span>
+                    </div>
+                </div>
+
+                <!-- High Score Display -->
+                <div class="text-sm font-extrabold text-amber-400 flex items-center justify-center space-x-2 bg-amber-500/10 py-2.5 rounded-xl border border-amber-500/20">
+                    <i class="fa-solid fa-trophy"></i>
+                    <span>BEST SCORE: <span id="start-highscore">0</span> pts</span>
+                </div>
+
+                <!-- Play Button -->
+                <button id="start-btn" class="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-red-600 hover:brightness-110 active:scale-95 text-white font-black text-lg tracking-widest rounded-2xl shadow-2xl border border-white/30 transition transform">
+                    ENGAGE SLOPES
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="absolute inset-0 bg-red-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 z-40 text-center hidden">
+            <div class="max-w-md w-full glass-panel p-8 rounded-3xl border border-red-500/40 shadow-2xl space-y-6">
+                <div class="space-y-1">
+                    <span class="text-red-400 font-bold uppercase tracking-widest text-xs">Wipeout Recorded</span>
+                    <h2 class="text-4xl md:text-5xl font-black text-white text-shadow-fire">GAME OVER</h2>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-2 gap-3 text-left">
+                    <div class="bg-slate-900/80 p-3 rounded-2xl border border-white/10">
+                        <span class="text-[10px] uppercase font-bold text-gray-400 block">Total Score</span>
+                        <span id="stat-score" class="text-xl font-mono font-bold text-amber-400">0</span>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-2xl border border-white/10">
+                        <span class="text-[10px] uppercase font-bold text-gray-400 block">Distance Covered</span>
+                        <span id="stat-distance" class="text-xl font-mono font-bold text-cyan-400">0 m</span>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-2xl border border-white/10 col-span-2">
+                        <span class="text-[10px] uppercase font-bold text-gray-400 block">Final Realm</span>
+                        <span id="stat-phase" class="text-xs font-bold text-red-400 truncate block mt-1">Snow Peak</span>
+                    </div>
+                </div>
+
+                <div id="new-high-score-msg" class="text-yellow-400 font-extrabold text-sm hidden animate-bounce">
+                    🎉 NEW HIGH SCORE RECORD! 🎉
+                </div>
+
+                <button id="restart-btn" class="w-full py-4 bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 hover:brightness-110 active:scale-95 text-white font-black text-lg tracking-widest rounded-2xl shadow-xl border border-white/30 transition">
+                    RETRY HELLBOARD
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Game Script -->
+    <script>
+        // --- Web Audio API Procedural Sound Engine ---
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.initialized = false;
+                this.isMuted = false;
+                this.carveGain = null;
+                this.carveFilter = null;
+            }
+
+            init() {
+                if (this.initialized) return;
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+
+                const bufferSize = this.ctx.sampleRate * 2;
+                const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1;
+                }
+
+                const whiteNoise = this.ctx.createBufferSource();
+                whiteNoise.buffer = noiseBuffer;
+                whiteNoise.loop = true;
+
+                this.carveFilter = this.ctx.createBiquadFilter();
+                this.carveFilter.type = 'bandpass';
+                this.carveFilter.frequency.setValueAtTime(400, this.ctx.currentTime);
+                this.carveFilter.Q.setValueAtTime(1.5, this.ctx.currentTime);
+
+                this.carveGain = this.ctx.createGain();
+                this.carveGain.gain.setValueAtTime(0.01, this.ctx.currentTime);
+
+                whiteNoise.connect(this.carveFilter);
+                this.carveFilter.connect(this.carveGain);
+                this.carveGain.connect(this.ctx.destination);
+                whiteNoise.start();
+
+                this.initialized = true;
+            }
+
+            toggleMute() {
+                this.isMuted = !this.isMuted;
+                if (this.ctx) {
+                    if (this.isMuted) this.ctx.suspend();
+                    else this.ctx.resume();
+                }
+                return this.isMuted;
+            }
+
+            updateCarveSound(speedRatio, turnIntensity, transitionFactor) {
+                if (!this.initialized || this.isMuted) return;
+                const now = this.ctx.currentTime;
+                const baseFreq = THREE.MathUtils.lerp(480, 240, transitionFactor);
+                const targetFreq = baseFreq + (turnIntensity * 600) + (speedRatio * 300);
+                const targetVol = Math.min(0.18, 0.02 + (turnIntensity * 0.1) + (speedRatio * 0.04));
+
+                this.carveFilter.frequency.setTargetAtTime(targetFreq, now, 0.05);
+                this.carveGain.gain.setTargetAtTime(targetVol, now, 0.05);
+            }
+
+            playJump() {
+                if (!this.initialized || this.isMuted) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.exponentialRampToValueAtTime(650, now + 0.25);
+
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.25);
+            }
+
+            playBoost() {
+                if (!this.initialized || this.isMuted) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(900, now + 0.35);
+
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.35);
+            }
+
+            playCrash() {
+                if (!this.initialized || this.isMuted) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.linearRampToValueAtTime(30, now + 0.3);
+
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.3);
+            }
+        }
+
+        const soundEngine = new SoundEngine();
+
+        // --- Game Configuration ---
+        const CONFIG = {
+            TRACK_WIDTH: 26,
+            FORWARD_SPEED_INITIAL: 35,
+            FORWARD_SPEED_MAX: 70,
+            STEER_SPEED: 24,
+            JUMP_FORCE: 12.5,
+            GRAVITY: 32,
+            TRANSITION_START_DIST: 300,
+            TRANSITION_END_DIST: 900,
+            CAMERA_HEIGHT: 1.6,
+            SPAWN_DIST: 180,
+            SWIPE_THRESHOLD: 30
+        };
+
+        // --- Global State ---
+        let scene, camera, renderer;
+        let isPlaying = false;
+        let isGameOver = false;
+
+        let distanceCovered = 0;
+        let currentSpeed = CONFIG.FORWARD_SPEED_INITIAL;
+        let health = 100;
+        let score = 0;
+        let transitionFactor = 0; // 0 (Snow) -> 1 (Hell)
+        let boostTimer = 0;
+
+        // Player Physics
+        let playerX = 0;
+        let playerY = 0;
+        let playerVelocityY = 0;
+        let isJumping = false;
+        let isBraking = false;
+        let steerInput = 0;
+
+        // Touch / Gesture Handling
+        let isDragging = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        // World Objects
+        let snowboardMesh;
+        let terrainMesh, terrainGeometry;
+        let obstacles = [];
+        let boosterPads = [];
+
+        let particlesSnow, particlesHell;
+        let dirLight, ambientLight, fog;
+
+        // High Score
+        let highScore = localStorage.getItem('hellboard_pure_highscore') || 0;
+        document.getElementById('start-highscore').innerText = Math.floor(highScore);
+
+        // Color Palettes
+        const COLOR_SNOW_TERRAIN = new THREE.Color(0xf0f6ff);
+        const COLOR_HELL_TERRAIN = new THREE.Color(0x280505);
+
+        const COLOR_SNOW_FOG = new THREE.Color(0xd0e8ff);
+        const COLOR_HELL_FOG = new THREE.Color(0x380505);
+
+        const COLOR_SNOW_AMBIENT = new THREE.Color(0xddeeff);
+        const COLOR_HELL_AMBIENT = new THREE.Color(0xff3300);
+
+        const COLOR_SNOW_DIR = new THREE.Color(0xffffff);
+        const COLOR_HELL_DIR = new THREE.Color(0xd97706);
+
+        // --- Initialize Engine ---
+        function initEngine() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            fog = new THREE.FogExp2(COLOR_SNOW_FOG.getHex(), 0.01);
+            scene.fog = fog;
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 350);
+            camera.position.set(0, CONFIG.CAMERA_HEIGHT, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            ambientLight = new THREE.AmbientLight(COLOR_SNOW_AMBIENT.getHex(), 0.65);
+            scene.add(ambientLight);
+
+            dirLight = new THREE.DirectionalLight(COLOR_SNOW_DIR.getHex(), 0.95);
+            dirLight.position.set(25, 50, 25);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            createTerrain();
+            createPlayerRig();
+            createParticleSystems();
+
+            window.addEventListener('resize', onWindowResize);
+            setupControls();
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Downhill Terrain ---
+        function createTerrain() {
+            const length = 450;
+            const width = 90;
+            terrainGeometry = new THREE.PlaneGeometry(width, length, 45, 130);
+            terrainGeometry.rotateX(-Math.PI / 2);
+
+            const pos = terrainGeometry.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const z = pos.getZ(i);
+                const x = pos.getX(i);
+                let y = -z * 0.085 + Math.sin(x * 0.25) * 0.6;
+                if (Math.abs(x) > CONFIG.TRACK_WIDTH / 2) {
+                    y += Math.pow(Math.abs(x) - CONFIG.TRACK_WIDTH / 2, 1.5) * 0.35;
+                }
+                pos.setY(i, y);
+            }
+            terrainGeometry.computeVertexNormals();
+
+            const terrainMaterial = new THREE.MeshStandardMaterial({
+                color: COLOR_SNOW_TERRAIN.getHex(),
+                roughness: 0.85,
+                metalness: 0.05,
+                flatShading: true
+            });
+
+            terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
+            terrainMesh.position.z = -180;
+            terrainMesh.receiveShadow = true;
+            scene.add(terrainMesh);
+        }
+
+        // --- Player Snowboard Rig ---
+        function createPlayerRig() {
+            const playerRig = new THREE.Group();
+
+            const boardShape = new THREE.Shape();
+            boardShape.moveTo(-0.3, -1.4);
+            boardShape.lineTo(0.3, -1.4);
+            boardShape.quadraticCurveTo(0.35, 0, 0.3, 1.4);
+            boardShape.lineTo(-0.3, 1.4);
+            boardShape.quadraticCurveTo(-0.35, 0, -0.3, -1.4);
+
+            const boardGeo = new THREE.ExtrudeGeometry(boardShape, { depth: 0.07, bevelEnabled: true, bevelSegments: 2, bevelSize: 0.02, bevelThickness: 0.02 });
+            boardGeo.rotateX(Math.PI / 2);
+
+            const boardMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3, metalness: 0.6 });
+            snowboardMesh = new THREE.Mesh(boardGeo, boardMat);
+            snowboardMesh.position.set(0, -0.7, -1.1);
+            snowboardMesh.rotation.x = 0.25;
+            playerRig.add(snowboardMesh);
+
+            camera.add(playerRig);
+            scene.add(camera);
+        }
+
+        // --- Particle Systems ---
+        function createParticleSystems() {
+            const count = 350;
+            // Snow
+            const snowGeo = new THREE.BufferGeometry();
+            const snowPos = new Float32Array(count * 3);
+            for (let i = 0; i < count * 3; i += 3) {
+                snowPos[i] = (Math.random() - 0.5) * 70;
+                snowPos[i + 1] = Math.random() * 25;
+                snowPos[i + 2] = (Math.random() - 0.5) * 90;
+            }
+            snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+            particlesSnow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, transparent: true, opacity: 0.85 }));
+            scene.add(particlesSnow);
+
+            // Hell Embers
+            const hellGeo = new THREE.BufferGeometry();
+            const hellPos = new Float32Array(count * 3);
+            for (let i = 0; i < count * 3; i += 3) {
+                hellPos[i] = (Math.random() - 0.5) * 70;
+                hellPos[i + 1] = Math.random() * 25;
+                hellPos[i + 2] = (Math.random() - 0.5) * 90;
+            }
+            hellGeo.setAttribute('position', new THREE.BufferAttribute(hellPos, 3));
+            particlesHell = new THREE.Points(hellGeo, new THREE.PointsMaterial({ color: 0xff5500, size: 0.38, transparent: true, opacity: 0.0 }));
+            scene.add(particlesHell);
+        }
+
+        // --- Spawner Engine (Obstacles & Booster Pads) ---
+        function spawnWorldEntity(zPos) {
+            const isHellType = Math.random() < transitionFactor;
+            const xPos = (Math.random() - 0.5) * (CONFIG.TRACK_WIDTH - 4);
+
+            if (Math.random() < 0.18) {
+                // SPAWN SPEED BOOSTER PAD
+                const padGeo = new THREE.BoxGeometry(2.4, 0.12, 3.2);
+                const padMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x0891b2, roughness: 0.2 });
+                const pad = new THREE.Mesh(padGeo, padMat);
+                pad.position.set(xPos, 0.08, zPos);
+                pad.userData = { radius: 1.6, type: 'booster' };
+                scene.add(pad);
+                boosterPads.push(pad);
+            } else {
+                // SPAWN OBSTACLE (Trees in Snow, Lava Puddles in Hell)
+                const obstacleGroup = new THREE.Group();
+
+                if (!isHellType) {
+                    // Snow/Crystal Tree with Glowing Eyes
+                    const trunk = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.35, 0.55, 2.4),
+                        new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 })
+                    );
+                    trunk.position.y = 1.2;
+
+                    const leaves = new THREE.Mesh(
+                        new THREE.ConeGeometry(2.1, 5.0, 6),
+                        new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.8, flatShading: true })
+                    );
+                    leaves.position.y = 4.0;
+
+                    // Glowing Red Eyes on Tree
+                    const eyeGeo = new THREE.SphereGeometry(0.12, 8, 8);
+                    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+                    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+                    leftEye.position.set(-0.35, 4.2, 1.3);
+                    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+                    rightEye.position.set(0.35, 4.2, 1.3);
+
+                    obstacleGroup.add(trunk, leaves, leftEye, rightEye);
+                    obstacleGroup.userData = { radius: 1.3, height: 5.0, type: 'snowtree' };
+                } else {
+                    // Glowing Lava Puddle / Volcanic Pit
+                    const pit = new THREE.Mesh(
+                        new THREE.CylinderGeometry(2.2, 2.2, 0.35, 12),
+                        new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0xea580c, roughness: 0.2 })
+                    );
+                    pit.position.y = 0.18;
+
+                    const bubbleGeo = new THREE.SphereGeometry(0.4, 8, 8);
+                    const bubbleMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xdc2626 });
+                    const bubble = new THREE.Mesh(bubbleGeo, bubbleMat);
+                    bubble.position.set(0, 0.35, 0);
+
+                    obstacleGroup.add(pit, bubble);
+                    obstacleGroup.userData = { radius: 1.8, height: 0.35, type: 'lavapuddle' };
+                }
+
+                obstacleGroup.position.set(xPos, 0, zPos);
+                scene.add(obstacleGroup);
+                obstacles.push(obstacleGroup);
+            }
+        }
+
+        // --- Controls System ---
+        function setupControls() {
+            window.addEventListener('touchstart', (e) => {
+                if (!isPlaying) return;
+                isDragging = true;
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }, { passive: true });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!isPlaying || !isDragging) return;
+                const deltaX = e.touches[0].clientX - touchStartX;
+                const deltaY = touchStartY - e.touches[0].clientY;
+
+                steerInput = Math.max(-1, Math.min(1, deltaX / (window.innerWidth * 0.22)));
+
+                if (deltaY > CONFIG.SWIPE_THRESHOLD && !isJumping) {
+                    triggerJump();
+                    isDragging = false;
+                } else if (deltaY < -CONFIG.SWIPE_THRESHOLD) {
+                    isBraking = true;
+                }
+            }, { passive: true });
+
+            window.addEventListener('touchend', () => {
+                isDragging = false;
+                steerInput = 0;
+                isBraking = false;
+            });
+
+            window.addEventListener('mousedown', (e) => {
+                if (!isPlaying) return;
+                if (e.button === 0) {
+                    isDragging = true;
+                    touchStartX = e.clientX;
+                    touchStartY = e.clientY;
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isPlaying || !isDragging) return;
+                const deltaX = e.clientX - touchStartX;
+                const deltaY = touchStartY - e.clientY;
+
+                steerInput = Math.max(-1, Math.min(1, deltaX / (window.innerWidth * 0.22)));
+
+                if (deltaY > CONFIG.SWIPE_THRESHOLD && !isJumping) {
+                    triggerJump();
+                    isDragging = false;
+                } else if (deltaY < -CONFIG.SWIPE_THRESHOLD) {
+                    isBraking = true;
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+                steerInput = 0;
+                isBraking = false;
+            });
+
+            const keys = {};
+            window.addEventListener('keydown', (e) => {
+                keys[e.code] = true;
+                if (!isPlaying) return;
+                if (e.code === 'KeyW' || e.code === 'ArrowUp') triggerJump();
+                if (e.code === 'KeyS' || e.code === 'ArrowDown') isBraking = true;
+            });
+
+            window.addEventListener('keyup', (e) => {
+                keys[e.code] = false;
+                if (e.code === 'KeyS' || e.code === 'ArrowDown') isBraking = false;
+            });
+
+            setInterval(() => {
+                if (!isPlaying || isDragging) return;
+                if (keys['KeyA'] || keys['ArrowLeft']) steerInput = -1;
+                else if (keys['KeyD'] || keys['ArrowRight']) steerInput = 1;
+                else steerInput = 0;
+            }, 16);
+
+            document.getElementById('jump-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                triggerJump();
+            });
+
+            const brakeBtn = document.getElementById('brake-btn');
+            brakeBtn.addEventListener('mousedown', () => isBraking = true);
+            brakeBtn.addEventListener('mouseup', () => isBraking = false);
+            brakeBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); isBraking = true; }, { passive: true });
+            brakeBtn.addEventListener('touchend', () => isBraking = false);
+
+            document.getElementById('audio-toggle-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const muted = soundEngine.toggleMute();
+                document.getElementById('audio-icon').className = muted ? "fa-solid fa-volume-xmark text-sm text-red-400" : "fa-solid fa-volume-high text-sm text-white";
+            });
+
+            document.getElementById('start-btn').addEventListener('click', startGame);
+            document.getElementById('restart-btn').addEventListener('click', startGame);
+        }
+
+        function triggerJump() {
+            if (!isJumping && isPlaying) {
+                isJumping = true;
+                playerVelocityY = CONFIG.JUMP_FORCE;
+                soundEngine.playJump();
+            }
+        }
+
+        // --- Realm Visual Blending ---
+        function updateRealmTransition() {
+            if (distanceCovered < CONFIG.TRANSITION_START_DIST) {
+                transitionFactor = 0;
+            } else if (distanceCovered >= CONFIG.TRANSITION_END_DIST) {
+                transitionFactor = 1;
+            } else {
+                transitionFactor = (distanceCovered - CONFIG.TRANSITION_START_DIST) / (CONFIG.TRANSITION_END_DIST - CONFIG.TRANSITION_START_DIST);
+            }
+
+            fog.color.lerpColors(COLOR_SNOW_FOG, COLOR_HELL_FOG, transitionFactor);
+            fog.density = THREE.MathUtils.lerp(0.01, 0.017, transitionFactor);
+
+            ambientLight.color.lerpColors(COLOR_SNOW_AMBIENT, COLOR_HELL_AMBIENT, transitionFactor);
+            dirLight.color.lerpColors(COLOR_SNOW_DIR, COLOR_HELL_DIR, transitionFactor);
+
+            terrainMesh.material.color.lerpColors(COLOR_SNOW_TERRAIN, COLOR_HELL_TERRAIN, transitionFactor);
+            terrainMesh.material.roughness = THREE.MathUtils.lerp(0.85, 0.45, transitionFactor);
+
+            particlesSnow.material.opacity = 0.85 * (1 - transitionFactor);
+            particlesHell.material.opacity = 0.95 * transitionFactor;
+
+            const phaseBadge = document.getElementById('phase-badge');
+            const phaseIcon = document.getElementById('phase-icon');
+            const phaseText = document.getElementById('phase-text');
+
+            if (transitionFactor < 0.4) {
+                phaseBadge.className = "glass-panel px-5 py-1.5 rounded-full border border-cyan-400/40 flex items-center space-x-2";
+                phaseIcon.innerHTML = '<i class="fa-solid fa-snowflake text-cyan-400 animate-spin"></i>';
+                phaseText.innerText = "SNOW PEAK";
+                phaseText.className = "text-xs font-black tracking-widest uppercase text-cyan-200";
+            } else if (transitionFactor < 0.8) {
+                phaseBadge.className = "glass-panel px-5 py-1.5 rounded-full border border-amber-500/50 flex items-center space-x-2 bg-amber-950/30";
+                phaseIcon.innerHTML = '<i class="fa-solid fa-cloud-sun text-amber-400 animate-pulse"></i>';
+                phaseText.innerText = "BRIMSTONE DESCENT";
+                phaseText.className = "text-xs font-black tracking-widest uppercase text-amber-300";
+            } else {
+                phaseBadge.className = "glass-panel px-5 py-1.5 rounded-full border border-red-500/60 flex items-center space-x-2 bg-red-950/50 shadow-red-900/50";
+                phaseIcon.innerHTML = '<i class="fa-solid fa-fire text-red-500 animate-pulse"></i>';
+                phaseText.innerText = "INFERNAL HELL";
+                phaseText.className = "text-xs font-black tracking-widest uppercase text-red-400 text-shadow-fire";
+            }
+        }
+
+        // --- Main Game Loop ---
+        let clock = new THREE.Clock();
+
+        function startGame() {
+            soundEngine.init();
+
+            isPlaying = true;
+            isGameOver = false;
+            transitionFactor = 0;
+
+            distanceCovered = 0;
+            currentSpeed = CONFIG.FORWARD_SPEED_INITIAL;
+            health = 100;
+            score = 0;
+            boostTimer = 0;
+
+            playerX = 0;
+            playerY = 0;
+            playerVelocityY = 0;
+            isJumping = false;
+            isBraking = false;
+            steerInput = 0;
+
+            document.getElementById('health-bar').style.width = '100%';
+            document.getElementById('hud-score').innerText = '0';
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+
+            [obstacles, boosterPads].forEach(arr => {
+                arr.forEach(obj => scene.remove(obj));
+                arr.length = 0;
+            });
+
+            for (let z = -35; z > -CONFIG.SPAWN_DIST; z -= 16) {
+                spawnWorldEntity(z);
+            }
+
+            clock.start();
+        }
+
+        function updateGameLogic(delta) {
+            if (!isPlaying || isGameOver) return;
+
+            let targetSpeed = CONFIG.FORWARD_SPEED_INITIAL + (distanceCovered * 0.02);
+            if (boostTimer > 0) {
+                boostTimer -= delta;
+                targetSpeed *= 1.65;
+            } else if (isBraking) {
+                targetSpeed *= 0.45;
+            }
+
+            currentSpeed = THREE.MathUtils.lerp(currentSpeed, Math.min(targetSpeed, CONFIG.FORWARD_SPEED_MAX * 1.5), 0.1);
+
+            const distanceDelta = currentSpeed * delta;
+            distanceCovered += distanceDelta;
+            score += Math.floor(distanceDelta * 2.5);
+
+            updateRealmTransition();
+
+            playerX += steerInput * CONFIG.STEER_SPEED * delta;
+            const maxTrackX = (CONFIG.TRACK_WIDTH / 2) - 1.6;
+            playerX = Math.max(-maxTrackX, Math.min(maxTrackX, playerX));
+
+            let jumpPitch = 0;
+            if (isJumping) {
+                playerY += playerVelocityY * delta;
+                playerVelocityY -= CONFIG.GRAVITY * delta;
+                jumpPitch = (playerVelocityY / CONFIG.JUMP_FORCE) * 0.14;
+
+                if (playerY <= 0) {
+                    playerY = 0;
+                    playerVelocityY = 0;
+                    isJumping = false;
+                }
+            }
+
+            camera.position.x = THREE.MathUtils.lerp(camera.position.x, playerX, 0.16);
+            camera.position.y = CONFIG.CAMERA_HEIGHT + playerY;
+
+            camera.rotation.x = THREE.MathUtils.lerp(camera.rotation.x, jumpPitch, 0.15);
+            camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, -steerInput * 0.1, 0.12);
+            camera.rotation.y = THREE.MathUtils.lerp(camera.rotation.y, -steerInput * 0.07, 0.12);
+
+            // Booster Pad Collisions
+            for (let i = boosterPads.length - 1; i >= 0; i--) {
+                const pad = boosterPads[i];
+                pad.position.z += distanceDelta;
+
+                const dz = Math.abs(pad.position.z - camera.position.z);
+                const dx = Math.abs(pad.position.x - camera.position.x);
+
+                if (dz < pad.userData.radius && dx < pad.userData.radius && playerY < 0.8) {
+                    boostTimer = 2.5;
+                    score += 500;
+                    soundEngine.playBoost();
+
+                    const boostFlash = document.getElementById('boost-flash');
+                    boostFlash.style.opacity = '1';
+                    setTimeout(() => boostFlash.style.opacity = '0', 200);
+
+                    scene.remove(pad);
+                    boosterPads.splice(i, 1);
+                    continue;
+                }
+
+                if (pad.position.z > 5) {
+                    scene.remove(pad);
+                    boosterPads.splice(i, 1);
+                    spawnWorldEntity(-CONFIG.SPAWN_DIST);
+                }
+            }
+
+            // Obstacle Collisions
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.position.z += distanceDelta;
+
+                const dz = Math.abs(obs.position.z - camera.position.z);
+                const dx = Math.abs(obs.position.x - camera.position.x);
+
+                if (dz < obs.userData.radius && dx < obs.userData.radius) {
+                    const canJumpOver = playerY > (obs.userData.height * 0.5);
+
+                    if (!canJumpOver) {
+                        takeDamage(25);
+                        scene.remove(obs);
+                        obstacles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (obs.position.z > 5) {
+                    scene.remove(obs);
+                    obstacles.splice(i, 1);
+                    spawnWorldEntity(-CONFIG.SPAWN_DIST);
+                }
+            }
+
+            soundEngine.updateCarveSound(currentSpeed / 65, Math.abs(steerInput), transitionFactor);
+
+            document.getElementById('hud-distance').innerText = `${Math.floor(distanceCovered)} m`;
+            document.getElementById('hud-score').innerText = score;
+            document.getElementById('hud-speed').innerText = `${Math.floor(currentSpeed * 1.8)} km/h`;
+            document.getElementById('speed-bar').style.width = `${Math.min(100, (currentSpeed / CONFIG.FORWARD_SPEED_MAX) * 100)}%`;
+        }
+
+        function takeDamage(amount) {
+            soundEngine.playCrash();
+            health = Math.max(0, health - amount);
+            document.getElementById('health-bar').style.width = `${health}%`;
+
+            const flash = document.getElementById('damage-flash');
+            flash.style.opacity = '1';
+            setTimeout(() => flash.style.opacity = '0', 150);
+
+            if (health <= 0) gameOver();
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            isGameOver = true;
+
+            let isNewHigh = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('hellboard_pure_highscore', highScore);
+                isNewHigh = true;
+            }
+
+            document.getElementById('stat-score').innerText = score;
+            document.getElementById('stat-distance').innerText = `${Math.floor(distanceCovered)} m`;
+
+            let finalPhaseText = "Snow Peak";
+            if (transitionFactor >= 0.8) finalPhaseText = "Infernal Hell";
+            else if (transitionFactor >= 0.35) finalPhaseText = "Descent into Brimstone";
+            document.getElementById('stat-phase').innerText = finalPhaseText;
+
+            const newHighMsg = document.getElementById('new-high-score-msg');
+            if (isNewHigh) newHighMsg.classList.remove('hidden');
+            else newHighMsg.classList.add('hidden');
+
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.remove('hidden');
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            updateGameLogic(delta);
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function() {
+            initEngine();
+            animate();
+        };
+    </script>
+</body>
+</html>
