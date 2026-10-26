@@ -382,7 +382,7 @@
         let particlesSnow, particlesHell;
         let dirLight, ambientLight, fog;
 
-        let highScore = localStorage.getItem('hellboard_pure_highscore') || 0;
+        let highScore = parseInt(localStorage.getItem('hellboard_pure_highscore')) || 0;
         document.getElementById('start-highscore').innerText = Math.floor(highScore);
 
         const COLOR_SNOW_TERRAIN = new THREE.Color(0xf0f6ff);
@@ -416,6 +416,13 @@
             dirLight = new THREE.DirectionalLight(COLOR_SNOW_DIR.getHex(), 0.95);
             dirLight.position.set(25, 50, 25);
             dirLight.castShadow = true;
+            dirLight.shadow.camera.left = -45;
+            dirLight.shadow.camera.right = 45;
+            dirLight.shadow.camera.top = 60;
+            dirLight.shadow.camera.bottom = -60;
+            dirLight.shadow.camera.far = 220;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
             scene.add(dirLight);
 
             createTerrain();
@@ -455,6 +462,7 @@
 
             terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
             terrainMesh.position.z = -180;
+            terrainMesh.receiveShadow = true;
             scene.add(terrainMesh);
         }
 
@@ -558,6 +566,7 @@
                     obstacleGroup.userData = { radius: 1.8, height: 0.35, type: 'lavapuddle' };
                 }
 
+                obstacleGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
                 obstacleGroup.position.set(xPos, 0, zPos);
                 scene.add(obstacleGroup);
                 obstacles.push(obstacleGroup);
@@ -761,8 +770,8 @@
             if (!isPlaying || isGameOver) return;
 
             // Progressive difficulty scaling: Speed and obstacle density scale with distance & score
-            let difficultyMultiplier = 1 + (distanceCovered * 0.00075);
-            let targetSpeed = (CONFIG.FORWARD_SPEED_INITIAL + (distanceCovered * 0.035)) * Math.min(2.0, difficultyMultiplier);
+            let difficultyMultiplier = 1 + (distanceCovered * 0.002);
+            let targetSpeed = (CONFIG.FORWARD_SPEED_INITIAL + (distanceCovered * 0.035)) * Math.min(3.5, difficultyMultiplier);
             
             if (boostTimer > 0) {
                 boostTimer -= delta;
@@ -811,7 +820,7 @@
                 const dz = Math.abs(pad.position.z - camera.position.z);
                 const dx = Math.abs(pad.position.x - camera.position.x);
 
-                if (dz < pad.userData.radius && dx < pad.userData.radius && playerY < 0.8) {
+                if (dz < pad.userData.radius + distanceDelta && dx < pad.userData.radius && playerY < 0.8) {
                     boostTimer = 2.5;
                     score += 600;
                     soundEngine.playBoost();
@@ -839,7 +848,7 @@
                 const dz = Math.abs(obs.position.z - camera.position.z);
                 const dx = Math.abs(obs.position.x - camera.position.x);
 
-                if (dz < obs.userData.radius && dx < obs.userData.radius) {
+                if (dz < obs.userData.radius + distanceDelta && dx < obs.userData.radius) {
                     const canJumpOver = playerY > (obs.userData.height * 0.45);
 
                     if (!canJumpOver) {
@@ -856,13 +865,18 @@
                 }
             }
 
+            // Keep the world filled: the frontier moves WITH the world (world drifts toward camera)
+            nextSpawnZ += distanceDelta;
+
             // Robust Infinite Generator Loop
-            while (nextSpawnZ > camera.position.z - CONFIG.SPAWN_DIST) {
+            let spawnAttempts = 0;
+            while (nextSpawnZ > camera.position.z - CONFIG.SPAWN_DIST && spawnAttempts < 50) {
                 spawnWorldEntity(nextSpawnZ);
-                // Dynamic spacing gets tighter as difficulty increases
-                const spacingReduction = Math.min(6, distanceCovered * 0.0025);
-                const randomGap = 12 + Math.random() * 8 - spacingReduction;
-                nextSpawnZ -= Math.max(8, randomGap);
+                // Dynamic spacing gets tighter as difficulty increases (clamped properly)
+                const spacingReduction = Math.min(4, distanceCovered * 0.001);
+                const randomGap = Math.max(10, 12 + Math.random() * 8 - spacingReduction);
+                nextSpawnZ -= randomGap;
+                spawnAttempts++;
             }
 
             soundEngine.updateCarveSound(currentSpeed / 75, Math.abs(steerInput), transitionFactor);
@@ -918,10 +932,37 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        function updateParticles(delta) {
+            const spd = isPlaying ? currentSpeed : 8;
+
+            const snowPos = particlesSnow.geometry.attributes.position;
+            for (let i = 0; i < snowPos.count; i++) {
+                let y = snowPos.getY(i) - delta * 6;
+                let z = snowPos.getZ(i) + delta * spd * 0.6;
+                if (y < -1) y = 25;
+                if (z > 10) z = -80;
+                snowPos.setY(i, y);
+                snowPos.setZ(i, z);
+            }
+            snowPos.needsUpdate = true;
+
+            const hellPos = particlesHell.geometry.attributes.position;
+            for (let i = 0; i < hellPos.count; i++) {
+                let y = hellPos.getY(i) + delta * 3;
+                let z = hellPos.getZ(i) + delta * spd * 0.6;
+                if (y > 25) y = 0;
+                if (z > 10) z = -80;
+                hellPos.setY(i, y);
+                hellPos.setZ(i, z);
+            }
+            hellPos.needsUpdate = true;
+        }
+
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta();
+            const delta = Math.min(clock.getDelta(), 0.05);
             updateGameLogic(delta);
+            updateParticles(delta);
             renderer.render(scene, camera);
         }
 
